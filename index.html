@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live HTML Compiler & Responsive Previewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom scrollbar for a cleaner look */
+        textarea::-webkit-scrollbar {
+            width: 8px;
+        }
+        textarea::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        textarea::-webkit-scrollbar-thumb {
+            background-color: #4b5563;
+            border-radius: 20px;
+            border: 3px solid #1f2937;
+        }
+        .preview-frame {
+            transition: width 0.3s ease-in-out;
+        }
+        .control-btn {
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white flex flex-col h-screen overflow-hidden">
+
+    <header class="bg-gray-800 border-b border-gray-700 p-2 flex items-center justify-between shadow-md z-10 flex-shrink-0">
+        <div class="flex items-center space-x-4">
+            <svg class="w-6 h-6 text-cyan-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 12" />
+            </svg>
+            <h1 class="text-lg font-bold text-gray-200 hidden sm:block">HTML Live Editor</h1>
+             <div class="flex items-center space-x-2 border-l border-gray-700 pl-4">
+                <!-- Increased width with px-4 and added bg-gray-700 for the toggle editor button -->
+                <button id="toggle-editor-btn" class="control-btn p-2 px-4 rounded-md text-gray-400 bg-gray-700 hover:bg-gray-600 hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-cyan-500" title="Show/Hide Code">
+                   <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6.75h4.5a2.25 2.25 0 0 1 2.25 2.25v7.5a2.25 2.25 0 0 1-2.25 2.25h-4.5m-4.5-12.75h-4.5a2.25 2.25 0 0 0-2.25 2.25v7.5a2.25 2.25 0 0 0 2.25 2.25h4.5" />
+                   </svg>
+                </button>
+                <button id="copy-btn" class="control-btn p-2 rounded-md text-gray-400 hover:bg-gray-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-cyan-500" title="Copy Code">
+                    <svg id="copy-icon" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+                    <span id="copy-text" class="hidden">Copied!</span>
+                </button>
+                <button id="reset-btn" class="control-btn p-2 rounded-md text-gray-400 hover:bg-gray-700 hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-cyan-500" title="Reset Code">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.664 0l3.18-3.185m-3.181-4.992a8.25 8.25 0 00-11.664 0l-3.18 3.185" /></svg>
+                </button>
+            </div>
+        </div>
+        <div class="flex items-center space-x-1 bg-gray-700 p-1 rounded-lg">
+            <!-- Increased width with px-4 for device buttons -->
+            <button id="desktop-btn" class="control-btn p-2 px-4 rounded-md text-sm font-medium focus:outline-none" title="Desktop View">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 0 0-1.414 0l-7 7a1 1 0 0 0 1.414 1.414L4 10.414V17a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-6.586l.293.293a1 1 0 0 0 1.414-1.414l-7-7z" /></svg>
+            </button>
+            <button id="tablet-btn" class="control-btn p-2 px-4 rounded-md text-sm font-medium focus:outline-none" title="Tablet View">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H5zm0 2h10v12H5V4z" clip-rule="evenodd" /></svg>
+            </button>
+            <button id="phone-btn" class="control-btn p-2 px-4 rounded-md text-sm font-medium focus:outline-none" title="Phone View">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7 2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H7zm0 2h6v12H7V4z" clip-rule="evenodd" /></svg>
+            </button>
+        </div>
+    </header>
+
+    <main id="main-content" class="flex-grow grid grid-cols-1 gap-2 p-2 overflow-hidden">
+        
+        <div id="editor-container" class="flex flex-col h-full hidden">
+            <textarea id="code-editor" class="flex-grow bg-gray-800 text-gray-300 p-4 rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-cyan-500 font-mono text-sm resize-none" spellcheck="false"></textarea>
+        </div>
+
+        <div id="preview-container" class="flex flex-col h-full">
+            <div class="flex-grow bg-gray-800 rounded-lg flex items-center justify-center border border-gray-700 overflow-hidden">
+                <iframe id="preview-frame" class="preview-frame bg-white w-full h-full shadow-inner" sandbox="allow-scripts allow-same-origin"></iframe>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // DOM Element References
+        const codeEditor = document.getElementById('code-editor');
+        const previewFrame = document.getElementById('preview-frame');
+        
+        const desktopBtn = document.getElementById('desktop-btn');
+        const tabletBtn = document.getElementById('tablet-btn');
+        const phoneBtn = document.getElementById('phone-btn');
+        const deviceControlBtns = document.querySelectorAll('.flex.items-center.space-x-1 .control-btn');
+
+        const copyBtn = document.getElementById('copy-btn');
+        const copyIcon = document.getElementById('copy-icon');
+        const copyText = document.getElementById('copy-text');
+        const resetBtn = document.getElementById('reset-btn');
+
+        const toggleEditorBtn = document.getElementById('toggle-editor-btn');
+        const editorContainer = document.getElementById('editor-container');
+        const previewContainer = document.getElementById('preview-container');
+        const mainContent = document.getElementById('main-content');
+
+        const initialPreviewCode = `<div class="bg-white font-sans p-8 text-gray-900 text-center">
+  <h1 class="text-4xl font-bold text-gray-800 mb-4">Welcome!</h1>
+  <p class="text-gray-600">
+    This is your live preview. Click the <b>&lt;/&gt;</b> icon above to show the code editor and start creating.
+  </p>
+</div>`;
+
+        /**
+         * Updates the iframe content with the code from the editor.
+         */
+        function updatePreview() {
+            const code = codeEditor.value;
+            const content = code.trim() === '' ? initialPreviewCode : code;
+            previewFrame.srcdoc = `
+                <html>
+                    <head>
+                        <script src="https://cdn.tailwindcss.com"><\/script>
+                    </head>
+                    <body>${content}</body>
+                </html>`;
+        }
+        
+        /**
+         * Toggles the visibility of the code editor and adjusts the layout.
+         */
+        function toggleEditor() {
+            const isHidden = editorContainer.classList.toggle('hidden');
+            mainContent.classList.toggle('md:grid-cols-2', !isHidden);
+            previewContainer.classList.toggle('md:col-span-2', isHidden);
+        }
+
+        /**
+         * Sets the preview frame to a specific width.
+         * @param {string} width - The CSS width value (e.g., '100%', '768px').
+         */
+        function setPreviewSize(width) {
+            previewFrame.style.width = width;
+        }
+
+        /**
+         * Handles button active states for device controls.
+         * @param {HTMLElement} clickedBtn - The button that was clicked.
+         */
+        function updateActiveButton(clickedBtn) {
+            deviceControlBtns.forEach(btn => btn.classList.remove('bg-cyan-500', 'text-white'));
+            clickedBtn.classList.add('bg-cyan-500', 'text-white');
+        }
+
+        /**
+         * Copies the current code from the editor to the clipboard.
+         */
+        function copyCode() {
+            document.execCommand('copy'); // Using document.execCommand for clipboard operations due to iframe restrictions
+            copyIcon.classList.add('hidden');
+            copyText.classList.remove('hidden');
+            setTimeout(() => {
+                copyIcon.classList.remove('hidden');
+                copyText.classList.add('hidden');
+            }, 2000);
+        }
+
+        /**
+         * Resets the editor to be empty.
+         */
+        function resetCode() {
+            codeEditor.value = '';
+            updatePreview();
+        }
+
+        // Event Listeners
+        codeEditor.addEventListener('input', updatePreview);
+        copyBtn.addEventListener('click', copyCode);
+        resetBtn.addEventListener('click', resetCode);
+        toggleEditorBtn.addEventListener('click', toggleEditor);
+
+        desktopBtn.addEventListener('click', () => {
+            setPreviewSize('100%');
+            updateActiveButton(desktopBtn);
+            // Close the editor if it's open
+            if (!editorContainer.classList.contains('hidden')) {
+                toggleEditor();
+            }
+        });
+
+        tabletBtn.addEventListener('click', () => {
+            setPreviewSize('768px');
+            updateActiveButton(tabletBtn);
+            // Close the editor if it's open
+            if (!editorContainer.classList.contains('hidden')) {
+                toggleEditor();
+            }
+        });
+
+        phoneBtn.addEventListener('click', () => {
+            setPreviewSize('375px');
+            updateActiveButton(phoneBtn);
+            // Close the editor if it's open
+            if (!editorContainer.classList.contains('hidden')) {
+                toggleEditor();
+            }
+        });
+
+        // Initial setup on page load
+        window.addEventListener('load', () => {
+            codeEditor.value = ''; // Start with an empty editor
+            updatePreview();
+            updateActiveButton(desktopBtn); // Set desktop as default active
+        });
+    </script>
+</body>
+</html>
