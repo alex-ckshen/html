@@ -88,8 +88,66 @@
     <script type="module">
         import * as THREE from 'three';
 
-        // --- All shaders are correct and unchanged from the previous version ---
-        const vertexShader = `uniform vec2 u_drag_velocity; uniform float u_click_strength; uniform float u_stretch; uniform float u_squash; uniform float u_spherify_strength; uniform float u_drag_deformation_strength; varying vec3 v_world_position; varying vec3 v_normal; varying vec4 v_screen_pos; varying vec2 v_uv; void main() { v_uv = uv; vec3 displaced_position = position; float click_effect = u_click_strength * u_spherify_strength; float expansion_factor = 1.0 + click_effect * 0.4; float squash_factor = 1.0 - click_effect * 0.3; displaced_position.xy *= expansion_factor; displaced_position.z *= squash_factor; float drag_strength = length(u_drag_velocity); if (drag_strength > 0.001) { vec2 drag_dir = normalize(u_drag_velocity); float projection = dot(displaced_position.xy, drag_dir); displaced_position.xy += drag_dir * projection * drag_strength * u_stretch * u_drag_deformation_strength; vec2 perpendicular_dir = vec2(-drag_dir.y, drag_dir.x); float perp_projection = dot(displaced_position.xy, perpendicular_dir); displaced_position.xy -= perpendicular_dir * perp_projection * drag_strength * u_squash * u_drag_deformation_strength; } vec4 modelViewPosition = modelViewMatrix * vec4(displaced_position, 1.0); gl_Position = projectionMatrix * modelViewPosition; v_screen_pos = gl_Position; v_world_position = (modelMatrix * vec4(displaced_position, 1.0)).xyz; v_normal = normalize(normalMatrix * displaced_position); }`;
+        // --- UPDATED: Vertex shader now contains a dual physics model ---
+        const vertexShader = `
+            uniform vec2 u_drag_velocity;
+            uniform float u_click_strength;
+            uniform float u_stretch;
+            uniform float u_squash;
+            uniform float u_spherify_strength; 
+            uniform float u_drag_deformation_strength;
+
+            varying vec3 v_world_position; varying vec3 v_normal;
+            varying vec4 v_screen_pos; varying vec2 v_uv;
+
+            void main() {
+                v_uv = uv;
+                vec3 displaced_position = position;
+
+                float click_effect = u_click_strength * u_spherify_strength;
+                float expansion_factor = 1.0 + click_effect * 0.4;
+                float squash_factor = 1.0 - click_effect * 0.3;
+                displaced_position.xy *= expansion_factor;
+                displaced_position.z *= squash_factor;
+
+                float drag_strength = length(u_drag_velocity);
+                if (drag_strength > 0.001) {
+                    
+                    // Non-Rotational Physics for the Capsule
+                    if (u_drag_deformation_strength < 1.0) {
+                        float dx = u_drag_velocity.x;
+                        float dy = u_drag_velocity.y;
+                        
+                        // 1. Limited horizontal stretch (max 10% effect)
+                        float h_stretch_factor = 1.0 + (dx * u_stretch * 0.2);
+                        displaced_position.x *= h_stretch_factor;
+                        
+                        // 2. Subtle vertical squash from horizontal movement
+                        float v_squash_factor = 1.0 - (abs(dx) * u_squash * 0.05);
+                        displaced_position.y *= v_squash_factor;
+
+                        // 3. Vertical 'bouncing' jiggle from vertical movement
+                        float v_jiggle_offset = dy * u_stretch * 0.8;
+                        displaced_position.y += v_jiggle_offset;
+
+                    // Original, Rotational Physics for the Sphere/Circle
+                    } else {
+                        vec2 drag_dir = normalize(u_drag_velocity);
+                        float projection = dot(displaced_position.xy, drag_dir);
+                        displaced_position.xy += drag_dir * projection * drag_strength * u_stretch;
+                        vec2 perpendicular_dir = vec2(-drag_dir.y, drag_dir.x);
+                        float perp_projection = dot(displaced_position.xy, perpendicular_dir);
+                        displaced_position.xy -= perpendicular_dir * perp_projection * drag_strength * u_squash;
+                    }
+                }
+
+                vec4 modelViewPosition = modelViewMatrix * vec4(displaced_position, 1.0);
+                gl_Position = projectionMatrix * modelViewPosition;
+                v_screen_pos = gl_Position;
+                v_world_position = (modelMatrix * vec4(displaced_position, 1.0)).xyz;
+                v_normal = normalize(normalMatrix * displaced_position);
+            }
+        `;
         const fragmentShader = `uniform sampler2D u_background_tex; uniform samplerCube u_env_map; uniform float u_refraction; uniform float u_fresnel_power; uniform float u_rim_start; uniform float u_rim_strength; uniform float u_contact_shadow; varying vec3 v_world_position; varying vec3 v_normal; varying vec4 v_screen_pos; varying vec2 v_uv; const float IOR = 1.333; void main() { vec3 N = normalize(v_normal); vec3 V = vec3(0.0, 0.0, 1.0); vec3 R_refl = reflect(-V, N); vec4 reflected_color = textureCube(u_env_map, R_refl); vec2 screen_uv = v_screen_pos.xy / v_screen_pos.w; vec3 R_refr_curved = refract(-V, N, 1.0 / IOR); vec2 uv_flat = screen_uv - N.xy * u_refraction; vec2 uv_curved = screen_uv - R_refr_curved.xy * u_refraction; float edge_factor = 1.0 - dot(V, N); edge_factor = pow(edge_factor, 3.0); vec2 refr_uv = mix(uv_flat, uv_curved, edge_factor); refr_uv = refr_uv * 0.5 + 0.5; vec4 refracted_color = texture2D(u_background_tex, refr_uv); refracted_color.rgb *= 1.05; float fresnel = 1.0 - dot(V, N); fresnel = pow(fresnel, u_fresnel_power); fresnel = clamp(0.05 + fresnel, 0.0, 1.0); vec4 final_color = mix(refracted_color, reflected_color, fresnel); float rim = 1.0 - dot(V, N); final_color.rgb *= smoothstep(u_rim_start, 1.0, 1.0 - rim * u_rim_strength); vec3 lightDir = normalize(vec3(0.5, 1.0, 1.0)); vec3 reflectDir = reflect(-lightDir, N); float specular = pow(max(dot(reflectDir, V), 0.0), 32.0); final_color.rgb += vec3(1.0) * specular * 0.4; float footprint_y = v_uv.y; float footprint_alpha = smoothstep(0.15, 0.0, footprint_y) * u_contact_shadow * 0.5; final_color.rgb *= (1.0 - footprint_alpha); gl_FragColor = final_color; }`;
 
         const whitePixelBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wcAAwAB/epv2AAAAABJRU5CYII=';
@@ -102,7 +160,6 @@
         const zoom = 10.0; 
 
         async function init() {
-            // ... init function is largely unchanged ...
             const domCanvas = await html2canvas(document.body, { useCORS: true, logging: false, scale: window.devicePixelRatio, backgroundColor: null, ignoreElements: (el) => el.id === 'controls' });
             const backgroundTexture = new THREE.CanvasTexture(domCanvas);
             const container = document.getElementById('water-droplet-container');
@@ -129,93 +186,40 @@
             animate();
         }
         
-        // --- UPDATED: Shape logic is now perfect ---
+        // --- UPDATED: Capsule now uses the non-rotational physics model ---
         function changeShape(shape) {
             let newGeometry, spherifyStrength = 1.0, dragDeformationStrength = 1.0;
             const segments = 128; 
-            
             switch (shape) {
                 case 'capsule':
                     newGeometry = new THREE.CapsuleGeometry(1, 4, segments / 4, segments / 2);
                     newGeometry.rotateZ(Math.PI / 2);
-                    // Disable click-pulse to keep sides straight
-                    spherifyStrength = 0.0; 
-                    // But KEEP drag-jiggle for bounciness
-                    dragDeformationStrength = 1.0; 
+                    spherifyStrength = 0.0;
+                    dragDeformationStrength = 0.5; // Any value < 1.0 triggers the new physics
                     break;
                 case 'sphere':
                 default:
-                    // This is used for both Sphere and Circle modes
                     newGeometry = new THREE.SphereGeometry(1.2, segments, segments / 2);
-                    // All effects are on
                     spherifyStrength = 1.0;
-                    dragDeformationStrength = 1.0;
+                    dragDeformationStrength = 1.0; // Value of 1.0 triggers original physics
                     break;
             }
-
-            if (waterDrop && newGeometry) {
-                // Only change geometry if it's a different type
-                if (waterDrop.geometry.type !== newGeometry.type) {
-                    waterDrop.geometry.dispose(); 
-                    waterDrop.geometry = newGeometry;
-                }
-                // Always update physics parameters
-                waterDrop.material.uniforms.u_spherify_strength.value = spherifyStrength;
-                waterDrop.material.uniforms.u_drag_deformation_strength.value = dragDeformationStrength;
+            if (waterDrop && (!waterDrop.geometry || waterDrop.geometry.type !== newGeometry.type)) {
+                if(waterDrop.geometry) waterDrop.geometry.dispose(); 
+                waterDrop.geometry = newGeometry;
             }
-
-            // The 'active' state of buttons is handled by the event listeners below now
+            waterDrop.material.uniforms.u_spherify_strength.value = spherifyStrength;
+            waterDrop.material.uniforms.u_drag_deformation_strength.value = dragDeformationStrength;
         }
 
         function setupControls() {
-            // Setup for sliders remains the same
             const controlMap = [ 'size', 'scaleX', 'scaleY', 'stretch', 'squash', 'damping', 'refraction', 'fresnel' ];
-            controlMap.forEach(key => {
-                const slider = document.getElementById(key); const valueEl = document.getElementById(`${key}-value`); if (!slider) return;
-                slider.value = settings[key];
-                if(valueEl) valueEl.textContent = parseFloat(settings[key]).toFixed(2);
-                slider.addEventListener('input', (e) => { const value = parseFloat(e.target.value); settings[key] = value; if(valueEl) valueEl.textContent = value.toFixed(2); });
-            });
-
-            // --- UPDATED: Button logic is now distinct and intuitive ---
+            controlMap.forEach(key => { const slider = document.getElementById(key); const valueEl = document.getElementById(`${key}-value`); if (!slider) return; slider.value = settings[key]; if(valueEl) valueEl.textContent = parseFloat(settings[key]).toFixed(2); slider.addEventListener('input', (e) => { const value = parseFloat(e.target.value); settings[key] = value; if(valueEl) valueEl.textContent = value.toFixed(2); }); });
             const shapeButtons = document.querySelectorAll('.shape-buttons button');
-            
-            // Sphere Button
-            document.getElementById('shape-sphere').addEventListener('click', (e) => {
-                changeShape('sphere');
-                shapeButtons.forEach(btn => btn.classList.remove('active'));
-                e.target.classList.add('active');
-            });
-            
-            // Capsule Button
-            document.getElementById('shape-capsule').addEventListener('click', (e) => {
-                changeShape('capsule');
-                shapeButtons.forEach(btn => btn.classList.remove('active'));
-                e.target.classList.add('active');
-            });
-            
-            // Circle Button (Special mode for Sphere)
-            document.getElementById('shape-circle').addEventListener('click', (e) => {
-                changeShape('sphere'); // Use the sphere geometry...
-                // ...but lock the aspect ratio to 1:1
-                Object.assign(settings, { scaleX: 1.0, scaleY: 1.0 });
-                document.getElementById('scaleX').value = 1.0;
-                document.getElementById('scaleY').value = 1.0;
-                document.getElementById('scaleX-value').textContent = (1.0).toFixed(2);
-                document.getElementById('scaleY-value').textContent = (1.0).toFixed(2);
-
-                shapeButtons.forEach(btn => btn.classList.remove('active'));
-                e.target.classList.add('active'); // Keep the 'Circle' button active
-            });
-
-            // Reset Size Button
-            document.getElementById('reset-size').addEventListener('click', () => {
-                Object.assign(settings, defaults);
-                ['size', 'scaleX', 'scaleY'].forEach(key => {
-                    document.getElementById(key).value = settings[key];
-                    document.getElementById(`${key}-value`).textContent = parseFloat(settings[key]).toFixed(2);
-                });
-            });
+            document.getElementById('shape-sphere').addEventListener('click', (e) => { changeShape('sphere'); shapeButtons.forEach(btn => btn.classList.remove('active')); e.target.classList.add('active'); });
+            document.getElementById('shape-capsule').addEventListener('click', (e) => { changeShape('capsule'); shapeButtons.forEach(btn => btn.classList.remove('active')); e.target.classList.add('active'); });
+            document.getElementById('shape-circle').addEventListener('click', (e) => { changeShape('sphere'); Object.assign(settings, { scaleX: 1.0, scaleY: 1.0 }); document.getElementById('scaleX').value = 1.0; document.getElementById('scaleY').value = 1.0; document.getElementById('scaleX-value').textContent = (1.0).toFixed(2); document.getElementById('scaleY-value').textContent = (1.0).toFixed(2); shapeButtons.forEach(btn => btn.classList.remove('active')); e.target.classList.add('active'); });
+            document.getElementById('reset-size').addEventListener('click', () => { Object.assign(settings, defaults); ['size', 'scaleX', 'scaleY'].forEach(key => { document.getElementById(key).value = settings[key]; document.getElementById(`${key}-value`).textContent = parseFloat(settings[key]).toFixed(2); }); });
         }
         
         function onWindowResize() { const aspect = window.innerWidth / window.innerHeight; camera.left = -zoom * aspect; camera.right = zoom * aspect; camera.top = zoom; camera.bottom = -zoom; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
@@ -230,10 +234,11 @@
             waterDrop.position.x += (mouse.x - waterDrop.position.x) * 0.08;
             waterDrop.position.y += (mouse.y - waterDrop.position.y) * 0.08;
             waterDrop.scale.set(settings.size * settings.scaleX, settings.size * settings.scaleY, settings.size);
-            
             uniforms.u_click_strength.value = clickStrength;
-            Object.keys(settings).forEach(key => { if(uniforms[`u_${key}`]) uniforms[`u_${key}`].value = settings[key]});
-            
+            uniforms.u_stretch.value = settings.stretch;
+            uniforms.u_squash.value = settings.squash;
+            uniforms.u_refraction.value = settings.refraction;
+            uniforms.u_fresnel_power.value = settings.fresnel;
             renderer.render(scene, camera);
         }
         
