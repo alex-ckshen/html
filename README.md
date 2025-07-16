@@ -2,16 +2,11 @@
 
 A sleek, in-browser tool for writing and previewing HTML and Tailwind CSS code in real-time. This editor is perfect for quick prototyping, testing components, or for educational purposes. It's built with vanilla JavaScript and is fully self-contained in a single HTML file.
 
-
-*(**Pro-tip:** Replace the image URL above with a real screenshot of your running application!)*
-
 ---
 
 ## 🚀 Live Demo
 
-**[Check out the live version here!](https://YOUR_GITHUB_USERNAME.github.io/YOUR_REPOSITORY_NAME/)**
-
-*(Replace `YOUR_GITHUB_USERNAME` and `YOUR_REPOSITORY_NAME` with your actual GitHub details.)*
+**[Check out the live version here!](https://alex-ckshen.github.io/html/)**
 
 ---
 
