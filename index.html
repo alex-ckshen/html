@@ -21,9 +21,9 @@
             user-select: none; overflow-y: hidden;
         }
         
-        /* This CSS rule now uses a class selector for reliability */
+        /* Uses a class to reliably show a placeholder for the contenteditable div */
         #custom-message.is-empty::before {
-            content: "Add Text";
+            content: "Add a title or note...";
             color: #6b7280;
             pointer-events: none;
         }
@@ -53,10 +53,8 @@
             </div>
         </div>
         
-        <!-- BRUTE FORCE FIX: Outer container for robust centering -->
         <div id="custom-message-wrapper" class="self-stretch flex-grow grid place-content-center text-center px-4 rounded-md hover:bg-gray-700 border border-gray-600 mx-4 cursor-text" onclick="document.getElementById('custom-message').focus()">
-            <!-- The actual editable area, now with the .is-empty class for initial state -->
-            <div id="custom-message" contenteditable="true" class="w-full focus:outline-none text-gray-200 text-base is-empty" title="Click to edit message"></div>
+            <div id="custom-message" contenteditable="true" class="w-full focus:outline-none text-gray-200 text-base is-empty" title="Click to edit a note or title"></div>
         </div>
         
         <!-- Right Section -->
@@ -94,7 +92,7 @@
     </main>
 
     <script>
-        // DOM REFERENCES
+        // --- DOM REFERENCES & CONSTANTS ---
         const codeEditor = document.getElementById('code-editor');
         const lineNumbersDiv = document.getElementById('line-numbers');
         const previewFrame = document.getElementById('preview-frame');
@@ -112,9 +110,26 @@
         const previewContainer = document.getElementById('preview-container');
         const customMessageDiv = document.getElementById('custom-message');
 
+        const initialEditorCode = ''; // Editor starts empty
         const initialPreviewCode = `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-family:sans-serif;color:#4b5563;text-align:center;padding:1rem;"><div><h1 style="font-size:2rem;font-weight:bold;color:#1f2937;margin-bottom:1rem;">Welcome!</h1><p>Your code preview appears here.</p></div></div>`;
         
-        // --- STABLE FUNCTIONS ---
+        // --- UTILITY FUNCTIONS ---
+        function debounce(func, delay) {
+            let timeoutId;
+            return function(...args) {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => {
+                    func.apply(this, args);
+                }, delay);
+            };
+        }
+
+        // --- CORE FUNCTIONS ---
+        function updateAllPanes() {
+            updateLineNumbers();
+            updatePreview();
+        }
+
         function updatePreview() {
             const code = codeEditor.value;
             const content = code.trim() === '' ? initialPreviewCode : code;
@@ -124,72 +139,64 @@
         function updateLineNumbers() {
             const lineCount = codeEditor.value.split('\n').length;
             lineNumbersDiv.innerHTML = Array.from({ length: lineCount }, (_, i) => i + 1).join('<br>');
+            synchronizeScroll();
         }
         
         function synchronizeScroll() {
             lineNumbersDiv.scrollTop = codeEditor.scrollTop;
         }
 
-        function copyCode() {
-            const textarea = document.createElement('textarea');
-            textarea.value = codeEditor.value;
-            textarea.style.position = 'fixed';
-            textarea.style.opacity = '0';
-            document.body.appendChild(textarea);
-            textarea.select();
-            try { 
-                document.execCommand('copy');
+        async function copyCode() {
+            const codeToCopy = codeEditor.value;
+            let copied = false;
+            
+            if (navigator.clipboard && window.isSecureContext) {
+                try {
+                    await navigator.clipboard.writeText(codeToCopy);
+                    copied = true;
+                } catch (err) {
+                    console.error('Async copy failed:', err);
+                }
+            }
+            
+            if (!copied) {
+                const textArea = document.createElement("textarea");
+                textArea.value = codeToCopy;
+                textArea.style.position = "fixed";
+                textArea.style.opacity = "0";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    copied = true;
+                } catch (err) {
+                    console.error('Fallback copy failed', err);
+                }
+                document.body.removeChild(textArea);
+            }
+
+            if (copied) {
                 copyIcon.classList.add('hidden');
                 copyText.classList.remove('hidden');
                 setTimeout(() => {
                     copyIcon.classList.remove('hidden');
                     copyText.classList.add('hidden');
                 }, 2000);
-            } catch (err) { 
-                console.error('Copy failed', err); 
             }
-            document.body.removeChild(textarea);
         }
-
+        
         function showEditorView() {
             previewContainer.classList.add('hidden');
-            editorContainer.classList.remove('hidden');
+            editorContainer.classList.remove('hidden', 'flex-col');
+            editorContainer.classList.add('flex', 'flex-col');
         }
 
         function showPreviewView() {
             editorContainer.classList.add('hidden');
             previewContainer.classList.remove('hidden');
+            previewContainer.classList.add('flex', 'flex-col');
         }
-
-        // --- EVENT LISTENERS ---
-        codeEditor.addEventListener('input', () => {
-            updateLineNumbers();
-            updatePreview();
-        });
-        codeEditor.addEventListener('scroll', synchronizeScroll);
-        copyBtn.addEventListener('click', copyCode);
-        
-        wipeBtn.addEventListener('click', () => {
-            customMessageDiv.textContent = '';
-            customMessageDiv.classList.add('is-empty'); // Ensure placeholder reappears
-            codeEditor.value = '';
-            updateLineNumbers();
-            updatePreview();
-            showEditorView();
-        });
-
-        // NEW: Handles placeholder visibility on user input
-        customMessageDiv.addEventListener('input', () => {
-            if (customMessageDiv.textContent.trim() === '') {
-                customMessageDiv.classList.add('is-empty');
-            } else {
-                customMessageDiv.classList.remove('is-empty');
-            }
-        });
-
-        toggleEditorBtn.addEventListener('click', () => {
-            showEditorView();
-        });
 
         function handlePreviewClick(width, button) {
             updatePreview();
@@ -201,6 +208,37 @@
             showPreviewView();
         }
 
+        // --- EVENT HANDLERS ---
+        const debouncedUpdate = debounce(updateAllPanes, 250);
+
+        codeEditor.addEventListener('input', debouncedUpdate);
+        codeEditor.addEventListener('scroll', synchronizeScroll);
+
+        codeEditor.addEventListener('keydown', function(e) {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = this.selectionStart;
+                const end = this.selectionEnd;
+                this.value = this.value.substring(0, start) + '  ' + this.value.substring(end);
+                this.selectionStart = this.selectionEnd = start + 2;
+            }
+        });
+
+        copyBtn.addEventListener('click', copyCode);
+        
+        wipeBtn.addEventListener('click', () => {
+            customMessageDiv.textContent = '';
+            customMessageDiv.classList.add('is-empty');
+            codeEditor.value = '';
+            updateAllPanes();
+            showEditorView();
+        });
+
+        customMessageDiv.addEventListener('input', () => {
+            customMessageDiv.classList.toggle('is-empty', customMessageDiv.textContent.trim() === '');
+        });
+
+        toggleEditorBtn.addEventListener('click', showEditorView);
         desktopBtn.addEventListener('click', () => handlePreviewClick('100%', desktopBtn));
         tabletBtn.addEventListener('click', () => handlePreviewClick('768px', tabletBtn));
         phoneBtn.addEventListener('click', () => handlePreviewClick('375px', phoneBtn));
@@ -208,10 +246,10 @@
         
         // --- INITIALIZATION ---
         window.addEventListener('load', () => {
-            updateLineNumbers();
+            codeEditor.value = initialEditorCode;
+            updateAllPanes();
             desktopBtn.classList.add('bg-cyan-500', 'text-white');
             showEditorView();
-            updatePreview();
         });
     </script>
 </body>
